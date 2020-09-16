@@ -9,6 +9,7 @@
 
 # ---------------------ZONA DE LIBRERIAS-------------------------------------------------
 import sys  # this allows you to use the sys.exit command to quit/logout of the application
+from func import *
 
 
 def main():
