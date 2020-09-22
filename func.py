@@ -9,10 +9,24 @@
 import sys
 import logging
 import getpass
-from optparse import OptionParser
-
+import xmpp
+import base64
+import time
+import threading
+import binascii
 import sleekxmpp
+from optparse import OptionParser
 from sleekxmpp.util.misc_ops import setdefaultencoding
+from sleekxmpp.exceptions import IqError, IqTimeout
+from sleekxmpp.xmlstream.stanzabase import ET, ElementBase
+from rich.console import Console
+from rich.highlighter import RegexHighlighter
+from rich.theme import Theme
+from rich.table import Table
+from rich.measure import Measurement
+from rich import box
+from rich.text import Text
+from rich.console import Console
 
 # Python versions before 3.0 do not use UTF-8 encoding
 # by default. To ensure that Unicode is handled properly
@@ -25,131 +39,324 @@ else:
     raw_input = input
 
 
-class EchoBot(sleekxmpp.ClientXMPP):
-
-    """
-    A simple SleekXMPP bot that will echo messages it
-    receives, along with a short thank you message.
-    """
-
+class ClientXMPP(sleekxmpp.ClientXMPP):
     def __init__(self, jid, password):
-        sleekxmpp.ClientXMPP.__init__(self, jid, password)
+        #ClientXMPP.__init__(self, jid, password)
+        super(ClientXMPP, self).__init__(jid, password)
 
-        # The session_start event will be triggered when
-        # the bot establishes its connection with the server
-        # and the XML streams are ready for use. We want to
-        # listen for this event so that we we can initialize
-        # our roster.
-        self.add_event_handler("session_start", self.start)
+        self.auto_authorize = True
+        self.auto_subscribe = True
+        self.contact_dict = {}
+        self.user_dict = {}
+        self.username = jid
+        self.add_event_handler('session_start', self.start)
+        self.add_event_handler('message', self.received_message)
+        self.add_event_handler("changed_subscription", self.getRosterForUser)
+        self.add_event_handler("changed_status", self.wait_for_presences)
 
-        # The message event is triggered whenever a message
-        # stanza is received. Be aware that that includes
-        # MUC messages and error messages.
-        self.add_event_handler("message", self.message)
+        self.received = set()
+        self.contacts = []
+        self.presences_received = threading.Event()
+
+        self.register_plugin('xep_0030')  # Service Discovery
+        self.register_plugin('xep_0199')  # XMPP Ping
+        self.register_plugin('xep_0004')  # Data forms
+        self.register_plugin('xep_0077')  # In-band Registration
+        self.register_plugin('xep_0045')  # Mulit-User Chat (MUC)
+        self.register_plugin('xep_0096')  # Jabber Search
+        self.register_plugin('xep_0065')
+        self.register_plugin('xep_0066')
+        self.register_plugin('xep_0050')
+        self.register_plugin('xep_0047')
+        self.register_plugin('xep_0231')
+        self.add_event_handler("unregistered_user", self.unreg)
+        self.add_event_handler("registered_user", self.reg)
+        #!we try to connect
+        if self.connect():
+            print("You have succesfully Loged In")
+            self.process(block=False)
+        else:
+            print("We could not connect to redes2020.xyz")
 
     def start(self, event):
-        """
-        Process the session_start event.
+        # we send a notification
+        self.send_presence(pshow='chat',
+                           pstatus='Available')
+        # We get the roster
+        roster = self.get_roster()
+        for rosterItem in roster['roster']['items'].keys():
+            # we add the team members
+            self.contacts.append(rosterItem)
+        for ID in self.contacts:
+            # send a notificaton to all
+            self.sendNotification(ID,
+                                  'Hi fellow!!!!!!!!!!! I am ready for chat Dude',
+                                  'active')
 
-        Typical actions for the session_start event are
-        requesting the roster and broadcasting an initial
-        presence stanza.
+    def received_message(self, msg):
+        sender = str(msg['from'])
+        jid = sender.split('/')[0]
+        username = jid.split('@')[0]
+        if msg['type'] in ('chat', 'normal'):
+            print("\n")
+            print(f'You have a new Message from: {jid}')
+            print("Message:  " + msg['body'])
+            print("")
+        if msg['type'] in ('groupchat'):
+            print("\n")
+            print(f'You have a new ROOM Message from: {jid}')
+            print("Room Message:  " + msg['body'])
+            print("")
+            #msg.reply("Thanks for sending\n%(body)s" % msg).send()
 
-        Arguments:
-            event -- An empty dictionary. The session_start
-                     event does not provide any additional
-                     data.
-        """
-        self.send_presence()
+    def sendMessage(self, destiny, messageToSend):
+        # We send a notification for writing to the other person
+        self.sendNotification(
+            destiny, 'Someone is writing for you fellow...', 'composing')
+        # we set a time out
+        time.sleep(5)
+        self.send_message(
+            mto=destiny,
+            mbody=messageToSend,
+            mtype="chat",
+            mfrom=self.boundjid.bare)
+
+        print("Message sended!!!")
+
+    def unreg(self, iq):
+        msg = "Bye! %s" % iq['register']['username']
+        self.send_message(mto=iq['from'],
+                          mbody=msg,
+                          mtype="chat",
+                          mfrom=self.fulljid)
+
+    def reg(self, iq):
+        msg = "Welcome! %s" % iq['register']['username']
+        self.send_message(mto=iq['from'],
+                          mbody=msg,
+                          mtype="chat",
+                          mfrom=self.fulljid)
+
+    def addJIDToRoster(self, contactToAdd):
+        try:
+            # We send a notification for writing to the other person
+            self.send_message(
+                mto=contactToAdd,
+                mbody="I Just added you to my roster",
+                mtype="chat",
+                mfrom=self.boundjid.bare)
+            self.send_presence_subscription(pto=contactToAdd)
+            return True
+        except IqError:
+            raise Exception("Unable to add user to rooster")
+            sys.exit(1)
+        except IqTimeout:
+            raise Exception("Server not responding")
+
+    def disconnectFromServer(self):
+        self.disconnect(wait=False)
+
+    def getRosterForUser(self):
         self.get_roster()
 
-    def message(self, msg):
-        """
-        Process incoming message stanzas. Be aware that this also
-        includes MUC messages and error messages. It is usually
-        a good idea to check the messages's type before processing
-        or sending replies.
+    # Extracted from : https://github.com/fritzy/SleekXMPP/blob/develop/sleekxmpp/clientxmpp.py
 
-        Arguments:
-            msg -- The received message stanza. See the documentation
-                   for stanza objects and the Message stanza to see
-                   how it may be used.
-        """
-        if msg['type'] in ('chat', 'normal'):
-            msg.reply("Thanks for sending\n%(body)s" % msg).send()
+    def wait_for_presences(self, pres):
+        "#! we expect some entries"
+        self.received.add(pres['from'].bare)
+        # if we get some presences not equals, its better other way
+        if len(self.received) >= len(self.client_roster.keys()):
+            self.presences_received.set()
+        else:
+            self.presences_received.clear()
+
+    def Joinchatroom(self, room, nickname):
+        try:
+            # we try to connect
+            self.plugin['xep_0045'].joinMUC(room, nickname)
+            print("You have succesfully connected to: " +
+                  room + "with NickName: "+nickname)
+            message = self.Message()
+
+            itemStanza = ET.fromstring(
+                "<active xmlns='http://jabber.org/protocol/chatstates'/>")
+
+            # Send a notification
+            message.append(itemStanza)
+            message['to'] = room
+            message['type'] = 'groupchat'
+            jid = str(self.boundjid.full).split('/')[0]
+            username = jid.split('@')[0]
+            message['body'] = username + " has just entered the room!!!!"
+            message.send(now=True)
+        except IqError as e:
+            raise Exception("The room could not been created/entered", e)
+        except IqTimeout:
+            raise Exception("Server redes2020.xyz not RESPONDING")
+
+    def createNewChatRoom(self, room, nickname):
+        try:
+            # we create a satus
+            status = "Joining the room..."
+            self.plugin['xep_0045'].joinMUC(
+                room,
+                nickname,
+                pstatus=status,
+                pfrom=self.boundjid.full,
+                wait=True)
+
+            # we create the affiliiation
+            self.plugin['xep_0045'].setAffiliation(
+                room,
+                self.boundjid.full,
+                affiliation="owner"
+            )
+
+            # publicate chat room
+            self.plugin['xep_0045'].configureRoom(
+                room,
+                ifrom=self.boundjid.full
+            )
+            print("You have succesfully connected to: " +
+                  room + "with NickName: "+nickname)
+        except IqError as e:
+            raise Exception("The room could not been created/entered", e)
+        except IqTimeout:
+            raise Exception("Server redes2020.xyz not RESPONDING")
+
+    def sendMessageToRoom(self, room, body):
+        self.send_message(mto=room,
+                          mbody=body,
+                          mtype='groupchat')
+
+    def deleteUserFromServer(self, userToDelete):
+        StanzaForDelete = self.Iq()
+        StanzaForDelete['type'] = 'set'
+        StanzaForDelete['from'] = self.fulljid
+        StanzaForDelete['register']['remove'] = True
+        try:
+            StanzaForDelete.send(now=True)
+            print("Account deleted succesfuly")
+        except IqError as e:
+            raise Exception("We could not Delete the account", e)
+            sys.exit(1)
+        except IqTimeout:
+            raise Exception("Server redes2020.xyz not responding")
+
+    def listALLServerUsers(self):
+        users = self.Iq()
+        users['type'] = 'set'
+        users['to'] = 'search.redes2020.xyz'
+        users['from'] = self.boundjid.bare
+        users['id'] = 'search_result'
+        itemStanza = ET.fromstring("<query xmlns='jabber:iq:search'>\
+                                 <x xmlns='jabber:x:data' type='submit'>\
+                                    <field type='hidden' var='FORM_TYPE'>\
+                                        <value>jabber:iq:search</value>\
+                                    </field>\
+                                    <field var='Username'>\
+                                        <value>1</value>\
+                                    </field>\
+                                    <field var='search'>\
+                                        <value>*</value>\
+                                    </field>\
+                                </x>\
+                                </query>")
+        users.append(itemStanza)
+        try:
+            x = users.send()
+            print(x)
+            print(self.contacts)
+        except IqError as e:
+            raise Exception("Unable list users", e)
+            sys.exit(1)
+        except IqTimeout:
+            raise Exception("Server not responding")
+
+    def sendNotification(self, receiver, MessageBody, ntype):
+        message = self.Message()
+        if (ntype == 'active'):
+            itemStanza = ET.fromstring(
+                "<active xmlns='http://jabber.org/protocol/chatstates'/>")
+        elif (ntype == 'composing'):
+            itemStanza = ET.fromstring(
+                "<composing xmlns='http://jabber.org/protocol/chatstates'/>")
+        elif (ntype == 'inactive'):
+            itemStanza = ET.fromstring(
+                "<inactive xmlns='http://jabber.org/protocol/chatstates'/>")
+
+        # Send a notification
+        message.append(itemStanza)
+        message['to'] = receiver
+        message['type'] = 'chat'
+        message['body'] = MessageBody
+        try:
+            message.send(now=True)
+        except IqError as e:
+            raise Exception("Notification not sended", e)
+            sys.exit(1)
+        except IqTimeout:
+            raise Exception("Server redes2020.xyz not responding")
+
+    # extraido de: https://github.com/fritzy/SleekXMPP/blob/develop/examples/roster_browser.py
+    def getInformationFromUsersAtRoster(self):
+        try:
+            self.get_roster()
+        except IqError as err:
+            print('Error: %s' % err.iq['error']['condition'])
+        except IqTimeout:
+            print('Error: Request timed out')
+        self.send_presence()
+        groups = self.client_roster.groups()
+        print
+        for group in groups:
+            print('\n%s' % group)
+            print('-' * 72)
+            for JID in groups[group]:
+                subscription = self.client_roster[JID]['subscription']
+                name = self.client_roster[JID]['name']
+                if self.client_roster[JID]['name']:
+                    print(' %s (%s) [%s]' % (name, JID, subscription))
+                else:
+                    print('Nombre:  %s y con tipo de suscripción: %s' %
+                          (JID, subscription))
+
+                connections = self.client_roster.presence(JID)
+                for res, pres in connections.items():
+                    show = 'available'
+                    if pres['show']:
+                        show = pres['show']
+                    print('At server   - %s with type: (%s)' % (res, show))
+                    if pres['status']:
+                        print('Status:       %s' % pres['status'])
+        print("")
+        print('-' * 72)
 
 
-if __name__ == '__main__':
-    # Setup the command line arguments.
-    optp = OptionParser()
-
-    # Output verbosity options.
-    optp.add_option('-q', '--quiet', help='set logging to ERROR',
-                    action='store_const', dest='loglevel',
-                    const=logging.ERROR, default=logging.INFO)
-    optp.add_option('-d', '--debug', help='set logging to DEBUG',
-                    action='store_const', dest='loglevel',
-                    const=logging.DEBUG, default=logging.INFO)
-    optp.add_option('-v', '--verbose', help='set logging to COMM',
-                    action='store_const', dest='loglevel',
-                    const=5, default=logging.INFO)
-
-    # JID and password options.
-    optp.add_option("-j", "--jid", dest="jid",
-                    help="JID to use")
-    optp.add_option("-p", "--password", dest="password",
-                    help="password to use")
-
-    opts, args = optp.parse_args()
-
-    # Setup logging.
-    logging.basicConfig(level=opts.loglevel,
-                        format='%(levelname)-8s %(message)s')
-
-    if opts.jid is None:
-        opts.jid = raw_input("Username: ")
-    if opts.password is None:
-        opts.password = getpass.getpass("Password: ")
-
-    # Setup the EchoBot and register plugins. Note that while plugins may
-    # have interdependencies, the order in which you register them does
-    # not matter.
-    xmpp = EchoBot(opts.jid, opts.password)
+''' if __name__ == '__main__':
+    xmpp = ClientXMPP(opts.jid, opts.password)
     xmpp.register_plugin('xep_0030')  # Service Discovery
     xmpp.register_plugin('xep_0004')  # Data Forms
     xmpp.register_plugin('xep_0060')  # PubSub
     xmpp.register_plugin('xep_0199')  # XMPP Ping
 
-    # If you are connecting to Facebook and wish to use the
-    # X-FACEBOOK-PLATFORM authentication mechanism, you will need
-    # your API key and an access token. Then you'll set:
-    # xmpp.credentials['api_key'] = 'THE_API_KEY'
-    # xmpp.credentials['access_token'] = 'THE_ACCESS_TOKEN'
-
-    # If you are connecting to MSN, then you will need an
-    # access token, and it does not matter what JID you
-    # specify other than that the domain is 'messenger.live.com',
-    # so '_@messenger.live.com' will work. You can specify
-    # the access token as so:
-    # xmpp.credentials['access_token'] = 'THE_ACCESS_TOKEN'
-
-    # If you are working with an OpenFire server, you may need
-    # to adjust the SSL version used:
-    # xmpp.ssl_version = ssl.PROTOCOL_SSLv3
-
-    # If you want to verify the SSL certificates offered by a server:
-    # xmpp.ca_certs = "path/to/ca/cert"
-
-    # Connect to the XMPP server and start processing XMPP stanzas.
     if xmpp.connect():
-        # If you do not have the dnspython library installed, you will need
-        # to manually specify the name of the server if it does not match
-        # the one in the JID. For example, to use Google Talk you would
-        # need to use:
-        #
-        # if xmpp.connect(('talk.google.com', 5222)):
-        #     ...
         xmpp.process(block=False)
         print("Done")
     else:
         print("Unable to connect.")
+ '''
+
+
+#! Registro
+def registerNewUser(user, passw):
+    usuario = user
+    password = passw
+    jid = xmpp.JID(usuario)
+    cli = xmpp.Client(jid.getDomain(), debug=[])
+    cli.connect()
+
+    if xmpp.features.register(cli, jid.getDomain(), {'username': jid.getNode(), 'password': password}):
+        return True
+    else:
+        return False

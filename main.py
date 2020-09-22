@@ -9,7 +9,8 @@
 
 # ---------------------ZONA DE LIBRERIAS-------------------------------------------------
 import sys  # this allows you to use the sys.exit command to quit/logout of the application
-from func import *
+import func
+clientForUser = None
 
 
 def main():
@@ -17,6 +18,7 @@ def main():
 
 
 def menu():
+
     print("************MAIN MENU**************")
     # time.sleep(1)
     print()
@@ -28,112 +30,173 @@ def menu():
                       D: Delete Account
                       E: Show ALL users and info about them
                       F: Add a user to my roster
-                      G: Show contact details
+                      G: Show contacts details
                       H: Send direct message
-                      I: Presence Message
-                      J: Join Chat room
-                      K: Send room message
+                      I: Join Chat room
+                      J: Create Room
+                      k: Send room message
                       L: Send File
                       Q: Quit/Exit
-                      
+
 
                       Please enter your choice: """)
 
     if choice == "A" or choice == "a":
         createAccount()
+        menu()
     elif choice == "B" or choice == "b":
-        logIn()
+        global clientForUser
+        clientForUser = logIn()
+        status = "Connected to SERVER"
+        menu()
     elif choice == "C" or choice == "c":
-        logOut()
+        logOut(clientForUser)
+        menu()
     elif choice == "D" or choice == "d":
-        deleAccount()
+        deleteAccount(clientForUser)
+        print("Bye friend, you DELETED YOUR ACCOUNT")
+        sys.exit
     elif choice == "E" or choice == "e":
-        showAllUsers()
+        showAllUsers(clientForUser)
+        menu()
     elif choice == "F" or choice == "f":
-        addUserToRoster()
+        addUserToRoster(clientForUser)
+        menu()
     elif choice == "G" or choice == "g":
-        showContactDetails()
+        showContactDetails(clientForUser)
+        menu()
     elif choice == "H" or choice == "h":
-        sendDirectMessage()
+        sendDirectMessage(clientForUser)
+        menu()
     elif choice == "I" or choice == "i":
-        sendPresence()
+        joinChatRoom(clientForUser)
+        menu()
     elif choice == "J" or choice == "j":
-        joinChatRoom()
+        createNewChatRoom(clientForUser)
+        menu()
     elif choice == "K" or choice == "k":
-        sendChatRoom()
-    elif choice == "L" or choice == "l":
-        sendFile()
+        sendChatRoom(clientForUser)
+        menu()
     elif choice == "Q" or choice == "q":
-        killProgram()
+        print("Bye Fellow!")
+        sys.exit
     else:
         print("Please select an option")
         print("Try again")
         menu()
 
 
+#! Crear cuenta
+
+
 def createAccount():
-    pass
-    # Teacher will enter student details manually
-    # These will be appended to the csv file
+    print("You are going to create account")
+    userName = input(
+        "Type username please:   ")
+    passWord = input("Type the password:    ")
+    # print(userName)
+    # print(passWord)
+    ansRegister = func.registerNewUser(userName, passWord)
+    if (ansRegister):
+        print("User succesfully created")
+    else:
+        print("Fail!!!! Try again")
 
 
 def logIn():
-    pass
-# Teacher can press a button to view all students at a glance
+    print("You are going to maje LOGIN")
+    userName = input(
+        "Type username please:   ")
+    passWord = input("Type the password:    ")
+    clientReturn = func.ClientXMPP(userName, passWord)
+    return clientReturn
 
 
-def logOut():
-    pass
-    # Teacher can input an ID number and display the relevant student's details
+def logOut(clientForUser):
+    clientForUser.disconnectFromServer()
+    print("Yoy have succesfully loged out from your account")
 
 
-def deleAccount():
-    pass
+def deleteAccount(clientForUser):
+    answerToDelete = input('''
+            Press 1 for YES
+            Pres 2 for NO
+    ''')
+    if(answerToDelete == "1"):
+        accountToDelete = input("Type your account name please  ")
+        clientForUser.deleteUserFromServer(accountToDelete)
+    elif (answerToDelete == "2"):
+        print("Ok Go on with the Main Menu")
+        menu()
 
 
-def showAllUsers():
-    pass
+def showAllUsers(clientForUser):
+    clientForUser.listALLServerUsers()
 
 
-def addUserToRoster():
-    pass
+def addUserToRoster(clientForUser):
+    print("You are going to add a new User")
+    userName = input(
+        "Type username from your friend:   ")
+    responseFromServer = clientForUser.addJIDToRoster(userName)
+    if(responseFromServer):
+        print("User succesfully added to roster")
+    else:
+        print("Failed to add user to roster")
 
 
-def showContactDetails():
-    pass
+def showContactDetails(clientForUser):
+    # we get the contact information from users
+    clientForUser.getInformationFromUsersAtRoster()
 
 
-def sendDirectMessage():
-    pass
+def sendDirectMessage(clientForUser):
+    print("You are going to send a Message")
+    userName = input(
+        "Type username from your friend/not friend:   ")
+    msg = input(
+        "Type your message:   ")
+    clientForUser.sendMessage(userName, msg)
 
 
-def joinChatRoom():
-    pass
+def joinChatRoom(clientForUser):
+    print("")
+    print("Example for room NAME: ROOMNAME@conference.redes2020.xyz")
+    roomName = input("type the Room Name CONNECT :  ")
+    NickName = input("type the Nickname or user thath you want:   ")
+    if("conference" in roomName):
+        print("We are going to connect....")
+        clientForUser.Joinchatroom(roomName, NickName)
+        menu()
+    else:
+        print("Nop, try again....")
+        menu()
 
 
-def sendPresence():
-    pass
+def createNewChatRoom(clientForUser):
+    print("")
+    print("Example for room NAME: ROOMNAME@conference.redes2020.xyz")
+    roomName = input("type the Room Name for CREATE :  ")
+    NickName = input("type the Nickname or user thath you want:   ")
+    if("conference" in roomName):
+        print("We are going to connect....")
+        clientForUser.createNewChatRoom(roomName, NickName)
+        menu()
+    else:
+        print("Nop, try again....")
+        menu()
 
 
-def sendRoomMessage():
-    pass
-
-
-def joinChatRoom():
-    pass
-
-
-def sendChatRoom():
-    pass
+def sendChatRoom(clientForUser):
+    print("---------------------------------------")
+    print("")
+    room = input("Type the room you want to send the message...")
+    message = input("Type the message to send to the room...")
+    clientForUser.sendMessageToRoom(room, message)
 
 
 def sendFile():
     pass
-
-
-def killProgram():
-    print("Bye Fellow!")
-    sys.exit
 
 
 #! Main del programa
