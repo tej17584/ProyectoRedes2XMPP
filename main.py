@@ -51,6 +51,7 @@ def menu():
         menu()
     elif choice == "C" or choice == "c":
         logOut(clientForUser)
+        print("You logged out. BYE!!")
         menu()
     elif choice == "D" or choice == "d":
         deleteAccount(clientForUser)

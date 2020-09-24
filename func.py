@@ -204,7 +204,7 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
                 room,
                 ifrom=self.boundjid.full
             )
-            print("You have succesfully connected to: " +
+            print("You have succesfully created the room: " +
                   room + "with NickName: "+nickname)
         except IqError as e:
             raise Exception("The room could not been created/entered", e)
@@ -215,6 +215,7 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
         self.send_message(mto=room,
                           mbody=body,
                           mtype='groupchat')
+        print("Message sended!!")
 
     def deleteUserFromServer(self, userToDelete):
         StanzaForDelete = self.Iq()
