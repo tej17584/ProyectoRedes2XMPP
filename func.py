@@ -10,7 +10,6 @@ import sys
 import logging
 import getpass
 import xmpp
-import base64
 import time
 import threading
 import binascii
@@ -18,15 +17,8 @@ import sleekxmpp
 from optparse import OptionParser
 from sleekxmpp.util.misc_ops import setdefaultencoding
 from sleekxmpp.exceptions import IqError, IqTimeout
-from sleekxmpp.xmlstream.stanzabase import ET, ElementBase
-from rich.console import Console
-from rich.highlighter import RegexHighlighter
-from rich.theme import Theme
-from rich.table import Table
-from rich.measure import Measurement
-from rich import box
-from rich.text import Text
-from rich.console import Console
+from sleekxmpp.xmlstream.stanzabase import ElementBase
+import xml.etree.ElementTree as ET
 
 # Python versions before 3.0 do not use UTF-8 encoding
 # by default. To ensure that Unicode is handled properly
@@ -97,15 +89,10 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
         sender = str(msg['from'])
         jid = sender.split('/')[0]
         username = jid.split('@')[0]
-        if msg['type'] in ('chat', 'normal'):
+        if msg['type'] in ('chat', 'normal', 'groupchat'):
             print("\n")
-            print(f'You have a new Message from: {jid}')
+            print(f'You have a new Message/RoomMessage from: {jid}')
             print("Message:  " + msg['body'])
-            print("")
-        if msg['type'] in ('groupchat'):
-            print("\n")
-            print(f'You have a new ROOM Message from: {jid}')
-            print("Room Message:  " + msg['body'])
             print("")
             #msg.reply("Thanks for sending\n%(body)s" % msg).send()
 
@@ -260,13 +247,22 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
                                     <field var='search'>\
                                         <value>*</value>\
                                     </field>\
+                                    <field var='Name'>\
+                                        <value>1</value>\
+                                    </field>\
+                                    <field var='Email'>\
+                                        <value>1</value>\
+                                    </field>\
                                 </x>\
                                 </query>")
         users.append(itemStanza)
         try:
-            x = users.send()
-            print(x)
-            print(self.contacts)
+            response = users.send()
+            tree = ET.fromstring(str(response))
+            root = tree.getroot()
+
+            for child in root:
+                print(child.tag, child.attrib)
         except IqError as e:
             raise Exception("Unable list users", e)
             sys.exit(1)
@@ -298,7 +294,7 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
         except IqTimeout:
             raise Exception("Server redes2020.xyz not responding")
 
-    # extraido de: https://github.com/fritzy/SleekXMPP/blob/develop/examples/roster_browser.py
+    # extracted from: https://github.com/fritzy/SleekXMPP/blob/develop/examples/roster_browser.py
     def getInformationFromUsersAtRoster(self):
         try:
             self.get_roster()
