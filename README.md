@@ -85,6 +85,10 @@ You must choose one option. You can enter a letter and then enter.
 
 In this part, you use the functionalitie thath you want.
 
+### Presence and notifications Warnings
+The program has several functions to receive messages. Actually, these messages are printed ABOVE the prompt. If in any case someone enters, you will be shown a presence message. If someone sends you a message, you will see a "typing" notification on your terminal. If someone enters a room, then you will see a notification.
+
+In these cases, it is better to press ENTER to return to the menu and continue with the functions.
 ## Instructions for use every Client Option
 
 ### A: Create Account
