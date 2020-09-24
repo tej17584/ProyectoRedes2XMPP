@@ -17,8 +17,8 @@ import sleekxmpp
 from optparse import OptionParser
 from sleekxmpp.util.misc_ops import setdefaultencoding
 from sleekxmpp.exceptions import IqError, IqTimeout
-from sleekxmpp.xmlstream.stanzabase import ElementBase
-import xml.etree.ElementTree as ET
+from sleekxmpp.xmlstream.stanzabase import ET, ElementBase
+from xml.etree.ElementTree import fromstring, ElementTree
 
 # Python versions before 3.0 do not use UTF-8 encoding
 # by default. To ensure that Unicode is handled properly
@@ -259,11 +259,14 @@ class ClientXMPP(sleekxmpp.ClientXMPP):
         users.append(itemStanza)
         try:
             response = users.send()
-            tree = ET.fromstring(str(response))
+            tree = ElementTree(fromstring(str(response)))
             root = tree.getroot()
+            ET.tostring(root, encoding='utf8').decode('utf8')
+            for record in root.iter():
+                print(record.attrib)
+                if record.text != None:
+                    print(record.text)
 
-            for child in root:
-                print(child.tag, child.attrib)
         except IqError as e:
             raise Exception("Unable list users", e)
             sys.exit(1)
